@@ -1,0 +1,58 @@
+{
+  "description": "Parallel 3D Lienard-Wiechert perturbation benchmark in a constant Ez field.",
+  "config": {
+    "seed": 33,
+    "n_particles": 256,
+    "total_charge_si": -1e-09,
+    "e_z_si": -1000000.0,
+    "t_end_s": 1.5e-08,
+    "n_outputs": 151,
+    "r_min_m": 1e-09,
+    "rtol": 1e-05,
+    "atol": 1e-10,
+    "workers": 12,
+    "output_dir": "python/lw_perturbation/output"
+  },
+  "constants": {
+    "electron_mass_MeV_c2": 0.511,
+    "electron_charge_C": -1.602176634e-19,
+    "epsilon0_SI": 8.85418782e-12,
+    "speed_of_light_m_per_s": 299792458.0,
+    "MeV_c_in_kg_m_per_s": 5.3442859926783075e-22
+  },
+  "initial_distribution": {
+    "position_mean_m": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "position_rms_m": [
+      0.001,
+      0.001,
+      0.1
+    ],
+    "momentum_mean_MeV_c": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "momentum_rms_MeV_c": [
+      1e-06,
+      1e-06,
+      1e-06
+    ],
+    "momentum_rms_beta_gamma": [
+      1.9569471624266145e-06,
+      1.9569471624266145e-06,
+      1.9569471624266145e-06
+    ]
+  },
+  "units": {
+    "position": "m",
+    "momentum": "MeV/c",
+    "momentum_plot": "beta*gamma = p/(m_e c)",
+    "kinetic_energy": "MeV",
+    "electric_field": "V/m",
+    "time": "s"
+  }
+}
