@@ -8,7 +8,7 @@
       - total bunch charge: -1 nC, represented in OPALX as BCHARGE=+1 nC
         with electron charge state CHARGE=-1
       - mean initial position: (0, 0, 0) m
-      - RMS initial position: sigma_x = sigma_y = sigma_z = 1 mm
+      - RMS initial position: sigma_x = sigma_y = 1 mm, sigma_z = 0.1 m
       - mean initial momentum: 0 in all directions
       - RMS thermal momentum: 1 eV/c per axis
       - OPAL momentum spread below is beta*gamma = p/(m_e c)
@@ -32,8 +32,8 @@ Value,{OPALVERSION};
 // ----------------------------------------------------------------------------
 // Python-matched global parameters
 
-REAL n_particles         = 1E6;
-REAL beam_bunch_charge   = 1e-9;          // magnitude in C; electron CHARGE=-1 below
+REAL n_particles         = 1E7;
+REAL beam_bunch_charge   = 1e-12; // 1e-9;          // magnitude in C; electron CHARGE=-1 below
 REAL rf_freq             = 1.3e9;         // unused by CONSTANTEFIELDCAVITY, kept for compatibility
 
 REAL sigma_x             = 1.0e-3;        // m
@@ -43,8 +43,8 @@ REAL sigma_z             = 1.0e-3;        // m
 REAL p_rms_MeVc          = 1.0e-6;        // 1 eV/c = 1e-6 MeV/c
 REAL p_rms_betagamma     = p_rms_MeVc / 0.511;
 
-REAL t_end               = 15.0e-9;       // s
-REAL n_steps             = 1000;
+REAL t_end               = 3e-9; // 15.0e-9;       // s
+REAL n_steps             = 800;
 REAL dt                  = t_end / n_steps;
 
 // ----------------------------------------------------------------------------
@@ -92,7 +92,7 @@ Dist1_GAUSS: DISTRIBUTION, TYPE=GAUSS,
     SIGMAZ    = sigma_z,
     SIGMAPX   = p_rms_betagamma,
     SIGMAPY   = p_rms_betagamma,
-    SIGMAPZ   = p_rms_betagamma,
+    SIGMAPZ   = p_rms_betagamma, // 0.1, // p_rms_betagamma * 1E5,
     NPARTDIST = n_particles;
 
 ES1: EMISSIONSOURCE, DISTRIBUTION = Dist1_GAUSS;
@@ -111,9 +111,9 @@ BEAM1: BEAM,
 // These are intentionally not tuned here; adapt them for your OPALX run.
 
 BINS1: BINNING,
-    MAXBINS        = 120,
+    MAXBINS        = 128,
     DESIREDWIDTH   = 0.05,
-    TABLEPRINTFREQ = 40,
+    TABLEPRINTFREQ = 100,
     PARAMETER      = GAMMAZ;
 
 FS1: Fieldsolver, TYPE=OPEN, BINS=BINS1,

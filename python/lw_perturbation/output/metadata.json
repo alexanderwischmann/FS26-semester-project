@@ -2,16 +2,21 @@
   "description": "Parallel 3D Lienard-Wiechert perturbation benchmark in a constant Ez field.",
   "config": {
     "seed": 33,
-    "n_particles": 256,
-    "total_charge_si": -1e-09,
+    "n_particles": 512,
+    "total_charge_si": -1e-12,
     "e_z_si": -1000000.0,
-    "t_end_s": 1.5e-08,
-    "n_outputs": 151,
+    "t_end_s": 3e-09,
+    "n_outputs": 801,
     "r_min_m": 1e-09,
+    "smoothing_grid_cells": 64,
+    "smoothing_extent_sigmas": 3.0,
     "rtol": 1e-05,
     "atol": 1e-10,
-    "workers": 12,
-    "output_dir": "python/lw_perturbation/output"
+    "workers": 8,
+    "output_dir": "/Users/aliemen/Desktop/wischmann_project/python/lw_perturbation/output",
+    "match_initial_stat": "python/lw_perturbation/opalx-sim/pert-test-uniformsphere.stat",
+    "target_position_rms_m": null,
+    "target_momentum_rms_bg": null
   },
   "constants": {
     "electron_mass_MeV_c2": 0.511,
@@ -29,7 +34,7 @@
     "position_rms_m": [
       0.001,
       0.001,
-      0.1
+      0.001
     ],
     "momentum_mean_MeV_c": [
       0.0,
@@ -46,6 +51,57 @@
       1.9569471624266145e-06,
       1.9569471624266145e-06
     ]
+  },
+  "initial_match_targets": {
+    "position_rms_m": [
+      0.0009870300716609875,
+      0.000986937258702089,
+      0.0009864953389764769
+    ],
+    "momentum_rms_beta_gamma": [
+      2.893483184693993e-06,
+      2.893846107567631e-06,
+      2.89362192116586e-06
+    ]
+  },
+  "actual_initial_sample": {
+    "position_mean_m": [
+      -9.740878893424454e-20,
+      3.8116482626443515e-20,
+      -1.0312626132821107e-19
+    ],
+    "position_rms_m": [
+      0.0009870300716609873,
+      0.0009869372587020893,
+      0.0009864953389764773
+    ],
+    "momentum_mean_MeV_c": [
+      -2.481541837659083e-24,
+      -1.0339757656912846e-23,
+      2.3161057151484775e-23
+    ],
+    "momentum_rms_MeV_c": [
+      1.4785699073786296e-06,
+      1.4787553609670603e-06,
+      1.4786408017157545e-06
+    ],
+    "momentum_mean_beta_gamma": [
+      -1.3234889800848443e-23,
+      -1.0587911840678754e-22,
+      -9.098986738083304e-24
+    ],
+    "momentum_rms_beta_gamma": [
+      2.8934831846939935e-06,
+      2.8938461075676317e-06,
+      2.8936219211658596e-06
+    ]
+  },
+  "smoothing": {
+    "kernel": "Plummer-like finite-size regularization of the LW separation",
+    "grid_cells_per_axis": 64,
+    "extent_half_width_rms": 3.0,
+    "cell_size_rule": "one virtual grid-cell diagonal from the current unperturbed bunch RMS extent",
+    "minimum_length_m": 1e-09
   },
   "units": {
     "position": "m",

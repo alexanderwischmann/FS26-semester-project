@@ -15,6 +15,7 @@ import csv
 import json
 import math
 import os
+import re
 import tempfile
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
@@ -38,10 +39,10 @@ P_MEV_C_SI = 1.0e6 * E_CHARGE_ABS_SI / C_SI
 
 DEFAULT_SEED = 33
 DEFAULT_N_PARTICLES = 256
-DEFAULT_TOTAL_CHARGE_SI = -1.0e-9
+DEFAULT_TOTAL_CHARGE_SI = -1e-12 # -1.0e-9
 DEFAULT_E_Z_SI = -1.0e6
 DEFAULT_T_END = 15.0e-9
-DEFAULT_N_OUTPUTS = 151
+DEFAULT_N_OUTPUTS = 800 # 151
 DEFAULT_R_MIN = 1.0e-9
 DEFAULT_SMOOTHING_GRID_CELLS = 128
 DEFAULT_SMOOTHING_EXTENT_SIGMAS = 3.0
@@ -51,7 +52,7 @@ DEFAULT_ATOL = 1.0e-10
 POSITION_MEAN_M = np.array([0.0, 0.0, 0.0])
 POSITION_SIGMA_M = np.array([1.0e-3, 1.0e-3, 1.0e-3])
 MOMENTUM_MEAN_MEV_C = np.array([0.0, 0.0, 0.0])
-MOMENTUM_SIGMA_MEV_C = np.array([1.0e-6, 1.0e-6, 1.0e-6])
+MOMENTUM_SIGMA_MEV_C = np.array([1.0e-6, 1.0e-6, 1.0e-6]) # np.array([0.0, 0.0, 0.0]) # 0.0511 == 0.1 in beta*gamma
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,9 @@ class RunConfig:
     atol: float
     workers: int
     output_dir: str
+    match_initial_stat: str | None = None
+    target_position_rms_m: tuple[float, float, float] | None = None
+    target_momentum_rms_bg: tuple[float, float, float] | None = None
 
     @property
     def q_macro_si(self) -> float:
@@ -125,6 +129,31 @@ def parse_args() -> RunConfig:
         default=script_dir / "output",
         help="Directory for CSV, NPZ, JSON, and plot outputs.",
     )
+    parser.add_argument(
+        "--match-initial-stat",
+        type=Path,
+        default=None,
+        help=(
+            "Read the first row of an OPALX .stat file and rescale the sampled "
+            "initial RMS values to rms_x/rms_y/rms_s and rms_px/rms_py/rms_ps."
+        ),
+    )
+    parser.add_argument(
+        "--match-initial-position-rms",
+        type=float,
+        nargs=3,
+        metavar=("RMS_X", "RMS_Y", "RMS_Z"),
+        default=None,
+        help="Rescale sampled initial positions to these exact RMS values in meters.",
+    )
+    parser.add_argument(
+        "--match-initial-momentum-rms-bg",
+        type=float,
+        nargs=3,
+        metavar=("RMS_PX", "RMS_PY", "RMS_PZ"),
+        default=None,
+        help="Rescale sampled initial momenta to these exact RMS beta*gamma values.",
+    )
     args = parser.parse_args()
 
     if args.particles < 1:
@@ -139,6 +168,14 @@ def parse_args() -> RunConfig:
         raise ValueError("--smoothing-grid-cells must be nonnegative")
     if args.smoothing_extent_sigmas <= 0:
         raise ValueError("--smoothing-extent-sigmas must be positive")
+    if args.match_initial_position_rms is not None and any(
+        value < 0.0 for value in args.match_initial_position_rms
+    ):
+        raise ValueError("--match-initial-position-rms values must be nonnegative")
+    if args.match_initial_momentum_rms_bg is not None and any(
+        value < 0.0 for value in args.match_initial_momentum_rms_bg
+    ):
+        raise ValueError("--match-initial-momentum-rms-bg values must be nonnegative")
     workers = args.workers
     if workers is None:
         workers = min(os.cpu_count() or 1, args.particles)
@@ -159,6 +196,13 @@ def parse_args() -> RunConfig:
         atol=args.atol,
         workers=workers,
         output_dir=str(args.output_dir),
+        match_initial_stat=str(args.match_initial_stat) if args.match_initial_stat else None,
+        target_position_rms_m=tuple(args.match_initial_position_rms)
+        if args.match_initial_position_rms is not None
+        else None,
+        target_momentum_rms_bg=tuple(args.match_initial_momentum_rms_bg)
+        if args.match_initial_momentum_rms_bg is not None
+        else None,
     )
 
 
@@ -175,10 +219,100 @@ def beta_from_p(p_mev_c: np.ndarray) -> np.ndarray:
     return p_mev_c / (gamma * M_E_MEV)
 
 
+def read_sdds_first_data_row(filename: str | os.PathLike[str]) -> dict[str, float]:
+    col_names: list[str] = []
+    with open(filename, "r") as f:
+        for line in f:
+            stripped = line.strip()
+            if stripped.startswith("&column"):
+                col_def = stripped
+                while "&end" not in col_def:
+                    col_def += " " + next(f).strip()
+                name_match = re.search(r"name\s*=\s*([^,\s]+)", col_def)
+                if name_match:
+                    col_names.append(name_match.group(1).strip(",\""))
+            if stripped.startswith("&data"):
+                break
+
+        for line in f:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("&"):
+                continue
+            try:
+                values = [float(x) for x in stripped.split()]
+            except ValueError:
+                continue
+            if len(values) == len(col_names):
+                return dict(zip(col_names, values, strict=True))
+
+    raise RuntimeError(f"Could not find numeric data in SDDS file: {filename}")
+
+
+def initial_rms_targets(config: RunConfig) -> tuple[np.ndarray | None, np.ndarray | None]:
+    position_rms_m = None
+    momentum_rms_bg = None
+
+    if config.match_initial_stat is not None:
+        row = read_sdds_first_data_row(config.match_initial_stat)
+        position_cols = ("rms_x", "rms_y", "rms_s")
+        momentum_cols = ("rms_px", "rms_py", "rms_ps")
+        missing = [col for col in position_cols + momentum_cols if col not in row]
+        if missing:
+            raise ValueError(
+                f"Missing required columns in {config.match_initial_stat}: {missing}"
+            )
+        position_rms_m = np.array([row[col] for col in position_cols], dtype=float)
+        momentum_rms_bg = np.array([row[col] for col in momentum_cols], dtype=float)
+
+    if config.target_position_rms_m is not None:
+        position_rms_m = np.array(config.target_position_rms_m, dtype=float)
+    if config.target_momentum_rms_bg is not None:
+        momentum_rms_bg = np.array(config.target_momentum_rms_bg, dtype=float)
+
+    return position_rms_m, momentum_rms_bg
+
+
+def match_mean_and_rms(
+    values: np.ndarray,
+    target_mean: np.ndarray,
+    target_rms: np.ndarray,
+    label: str,
+) -> np.ndarray:
+    result = np.array(values, dtype=float, copy=True)
+    current_mean = np.mean(result, axis=0)
+    centered = result - current_mean
+    current_rms = np.std(centered, axis=0)
+
+    for axis in range(result.shape[1]):
+        if target_rms[axis] == 0.0:
+            result[:, axis] = target_mean[axis]
+        elif current_rms[axis] == 0.0:
+            raise ValueError(
+                f"Cannot match nonzero {label} RMS on axis {axis}: sampled RMS is zero"
+            )
+        else:
+            result[:, axis] = (
+                target_mean[axis] + centered[:, axis] * target_rms[axis] / current_rms[axis]
+            )
+    return result
+
+
 def sample_initial_conditions(config: RunConfig) -> tuple[np.ndarray, np.ndarray]:
     rng = np.random.default_rng(config.seed)
     r0_m = rng.normal(POSITION_MEAN_M, POSITION_SIGMA_M, (config.n_particles, 3))
     p0_mev_c = rng.normal(MOMENTUM_MEAN_MEV_C, MOMENTUM_SIGMA_MEV_C, (config.n_particles, 3))
+    target_position_rms_m, target_momentum_rms_bg = initial_rms_targets(config)
+    if target_position_rms_m is not None:
+        r0_m = match_mean_and_rms(
+            r0_m, POSITION_MEAN_M, target_position_rms_m, "position"
+        )
+    if target_momentum_rms_bg is not None:
+        p0_mev_c = match_mean_and_rms(
+            p0_mev_c,
+            MOMENTUM_MEAN_MEV_C,
+            target_momentum_rms_bg * M_E_MEV,
+            "momentum",
+        )
     return r0_m, p0_mev_c
 
 
@@ -227,6 +361,46 @@ def trajectory_at_time(
     return r_t, p_t, gamma_t, beta_t, beta_dot
 
 
+def momenta_at_time(
+    t_s: float,
+    p0_mev_c: np.ndarray,
+    dpz_dt_mev_c_per_s: float,
+) -> np.ndarray:
+    p_t = np.array(p0_mev_c, dtype=float, copy=True)
+    p_t[:, 2] += dpz_dt_mev_c_per_s * t_s
+    return p_t
+
+
+def unperturbed_positions_at_time(
+    t_s: float,
+    r0_m: np.ndarray,
+    p0_mev_c: np.ndarray,
+    dpz_dt_mev_c_per_s: float,
+) -> np.ndarray:
+    r_t = np.array(r0_m, dtype=float, copy=True)
+    if abs(dpz_dt_mev_c_per_s) < 1.0e-300:
+        gamma0 = gamma_from_p(p0_mev_c)[:, np.newaxis]
+        r_t += (p0_mev_c / (gamma0 * M_E_MEV)) * C_SI * t_s
+        return r_t
+
+    p_t = momenta_at_time(t_s, p0_mev_c, dpz_dt_mev_c_per_s)
+    p_perp2 = p0_mev_c[:, 0] * p0_mev_c[:, 0] + p0_mev_c[:, 1] * p0_mev_c[:, 1]
+    m_eff = np.sqrt(M_E_MEV * M_E_MEV + p_perp2)
+    pz0 = p0_mev_c[:, 2]
+    pzt = p_t[:, 2]
+
+    asinh_delta = np.arcsinh(pzt / m_eff) - np.arcsinh(pz0 / m_eff)
+    transverse_factor = C_SI * asinh_delta / dpz_dt_mev_c_per_s
+    r_t[:, 0] += p0_mev_c[:, 0] * transverse_factor
+    r_t[:, 1] += p0_mev_c[:, 1] * transverse_factor
+
+    energy_delta = np.sqrt(m_eff * m_eff + pzt * pzt) - np.sqrt(
+        m_eff * m_eff + pz0 * pz0
+    )
+    r_t[:, 2] += C_SI * energy_delta / dpz_dt_mev_c_per_s
+    return r_t
+
+
 def vectorized_unperturbed(
     times_s: np.ndarray,
     r0_m: np.ndarray,
@@ -238,25 +412,11 @@ def vectorized_unperturbed(
     r = np.empty((n_t, n_p, 3), dtype=float)
     p = np.empty((n_t, n_p, 3), dtype=float)
     for t_idx, t_s in enumerate(times_s):
-        for i in range(n_p):
-            r[t_idx, i], p[t_idx, i], _, _, _ = trajectory_at_time(
-                float(t_s), r0_m[i], p0_mev_c[i], dpz_dt_mev_c_per_s
-            )
-    return r, p
-
-
-def unperturbed_positions_at_time(
-    t_s: float,
-    r0_m: np.ndarray,
-    p0_mev_c: np.ndarray,
-    dpz_dt_mev_c_per_s: float,
-) -> np.ndarray:
-    r = np.empty_like(r0_m)
-    for i in range(len(r0_m)):
-        r[i], _, _, _, _ = trajectory_at_time(
-            float(t_s), r0_m[i], p0_mev_c[i], dpz_dt_mev_c_per_s
+        r[t_idx] = unperturbed_positions_at_time(
+            float(t_s), r0_m, p0_mev_c, dpz_dt_mev_c_per_s
         )
-    return r
+        p[t_idx] = momenta_at_time(float(t_s), p0_mev_c, dpz_dt_mev_c_per_s)
+    return r, p
 
 
 def dynamic_smoothing_length_m(
@@ -381,7 +541,7 @@ def perturbation_rhs(
         p0_all_mev_c[target_idx],
         config.dpz_dt_mev_c_per_s,
     )
-    r_obs_m = r_target_0_m + y[3:6]
+    r_obs_m = r_target_0_m
     v_target_si = beta_target * C_SI
     smoothing_length_m = dynamic_smoothing_length_m(
         t_s, r0_all_m, p0_all_mev_c, config
@@ -472,7 +632,13 @@ def write_initial_conditions(output_dir: Path, r0_m: np.ndarray, p0_mev_c: np.nd
             )
 
 
-def write_metadata(output_dir: Path, config: RunConfig) -> None:
+def write_metadata(
+    output_dir: Path,
+    config: RunConfig,
+    r0_m: np.ndarray,
+    p0_mev_c: np.ndarray,
+) -> None:
+    target_position_rms_m, target_momentum_rms_bg = initial_rms_targets(config)
     metadata = {
         "description": "Parallel 3D Lienard-Wiechert perturbation benchmark in a constant Ez field.",
         "config": asdict(config),
@@ -489,6 +655,22 @@ def write_metadata(output_dir: Path, config: RunConfig) -> None:
             "momentum_mean_MeV_c": MOMENTUM_MEAN_MEV_C.tolist(),
             "momentum_rms_MeV_c": MOMENTUM_SIGMA_MEV_C.tolist(),
             "momentum_rms_beta_gamma": (MOMENTUM_SIGMA_MEV_C / M_E_MEV).tolist(),
+        },
+        "initial_match_targets": {
+            "position_rms_m": None
+            if target_position_rms_m is None
+            else target_position_rms_m.tolist(),
+            "momentum_rms_beta_gamma": None
+            if target_momentum_rms_bg is None
+            else target_momentum_rms_bg.tolist(),
+        },
+        "actual_initial_sample": {
+            "position_mean_m": np.mean(r0_m, axis=0).tolist(),
+            "position_rms_m": np.std(r0_m, axis=0).tolist(),
+            "momentum_mean_MeV_c": np.mean(p0_mev_c, axis=0).tolist(),
+            "momentum_rms_MeV_c": np.std(p0_mev_c, axis=0).tolist(),
+            "momentum_mean_beta_gamma": np.mean(p0_mev_c / M_E_MEV, axis=0).tolist(),
+            "momentum_rms_beta_gamma": np.std(p0_mev_c / M_E_MEV, axis=0).tolist(),
         },
         "smoothing": {
             "kernel": "Plummer-like finite-size regularization of the LW separation",
@@ -645,7 +827,7 @@ def run(config: RunConfig) -> None:
     times_s = np.linspace(0.0, config.t_end_s, config.n_outputs)
 
     write_initial_conditions(output_dir, r0_m, p0_mev_c, config)
-    write_metadata(output_dir, config)
+    write_metadata(output_dir, config, r0_m, p0_mev_c)
 
     print("computing unperturbed external-field trajectories", flush=True)
     r0_t_m, p0_t_mev_c = vectorized_unperturbed(
