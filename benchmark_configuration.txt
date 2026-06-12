@@ -1,0 +1,38 @@
+
+# Tranverse beam size big, so that space charge effects are small
+# Longitudinal beam size small, so that 
+SIGMA_X = 2e-3 # standard deviation of initial x position in [m]
+SIGMA_Y = 2e-3 # standard deviation of initial y position in [m]
+SIGMA_Z = 1e-5 # standard deviation of initial z position in [m]
+
+
+# Two populations with different, but high initial kinetic energy, so that space 
+ENERGY_0_1 = 1e0 # initial kinetic energy of reference particle in [MeV]
+ENERGY_0_2 = 2e0 # initial kinetic energy of reference particle in [MeV]
+
+P_0_1 = (0., 0., PZ_0_1)
+P_0_2 = (0., 0., PZ_0_2)
+
+
+# Momentum spread small in each population
+# Also Possible: SIGMA_PZ high 
+SIGMA_PX_BG = 1e-9 # standard deviation of initial x momentum in [1] (betagamma)
+SIGMA_PY_BG = 1e-9 # standard deviation of initial y momentum in [1] (betagamma)
+SIGMA_PZ_BG = 1e-9 # standard deviation of initial z momentum in [1] (betagamma)
+
+# Auch E_0 = 0. möglich
+E_Z = -1. # electric field strength in [MV/m]
+
+# Total charge small, so that space charge effects are small (could be even smaller)
+TOTAL_CHARGE_SI = -1e-13    # total bunch charge in [C]
+
+
+T_MAX = 3e-9            # maximum simulation time in [s]
+DELTA_T = T_MAX / 800   # 800 time steps
+
+
+# PIC
+N_PARTICLES = 32*32*32      # Number of macro particles
+
+# Analytic
+N_PARTICLES_ANALYTIC = 2**8 # Number of Trajectories

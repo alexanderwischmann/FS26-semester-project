@@ -1,0 +1,30 @@
+% Linearisierung und 2. Ordnung für relativistische Space-Charge Effekte (Homogenes externes Feld)
+
+% 1. Kinematik (Ortsänderung 2. Ordnung)
+\frac{d\mathbf{r}_i^{(2)}}{dt} = \mathbf{v}_i^{(2)} = \frac{1}{m\gamma_i^{(0)}} \left[ \mathbf{p}_i^{(2)} - \frac{(\mathbf{p}_i^{(0)} \cdot \mathbf{p}_i^{(2)}) + \frac{1}{2}(\mathbf{p}_i^{(1)})^2}{m^2 c^2 (\gamma_i^{(0)})^2}\mathbf{p}_i^{(0)} - \frac{\mathbf{p}_i^{(0)} \cdot \mathbf{p}_i^{(1)}}{m^2 c^2 (\gamma_i^{(0)})^2}\mathbf{p}_i^{(1)} + \frac{3}{2}\frac{(\mathbf{p}_i^{(0)} \cdot \mathbf{p}_i^{(1)})^2}{m^4 c^4 (\gamma_i^{(0)})^4}\mathbf{p}_i^{(0)} \right]
+
+% 2. Dynamik (Impulsänderung 2. Ordnung)
+\frac{d\mathbf{p}_i^{(2)}}{dt} = q \mathbf{E}_{self}^{(1)}(\mathbf{r}_i, t) + q \left( \mathbf{v}_i^{(0)} \times \mathbf{B}_{self}^{(1)}(\mathbf{r}_i, t) + \mathbf{v}_i^{(1)} \times \mathbf{B}_{self}^{(0)}(\mathbf{r}_i, t) \right)
+
+% 3. Algebraische Bestimmung der retardierten Zeitstörung 1. Ordnung
+t_{r,ij}^{(1)} = - \frac{\mathbf{n}_{ij}^{(0)} \cdot \left(\mathbf{r}_i^{(1)}(t) - \mathbf{r}_j^{(1)}(t_r^{(0)})\right)}{c \left(1 - \mathbf{n}_{ij}^{(0)} \cdot \boldsymbol{\beta}_j^{(0)}\right)}
+
+% 4. Geometrische und kinematische Hilfsvariablen (1. Störung)
+\mathbf{R}_{ij}^{(1)} = \mathbf{r}_i^{(1)}(t) - \mathbf{r}_j^{(1)}(t_r^{(0)}) - \mathbf{v}_j^{(0)}(t_r^{(0)}) t_{r,ij}^{(1)}
+R_{ij}^{(1)} = -c t_{r,ij}^{(1)}
+\mathbf{n}_{ij}^{(1)} = \frac{\mathbf{R}_{ij}^{(1)} - R_{ij}^{(1)}\mathbf{n}_{ij}^{(0)}}{R_{ij}^{(0)}}
+\gamma_j^{(1)} = \frac{\mathbf{p}_j^{(0)} \cdot \mathbf{p}_j^{(1)}}{m^2 c^2 \gamma_j^{(0)}}
+\boldsymbol{\beta}_j^{(1)} = \frac{1}{c}\mathbf{v}_j^{(1)}(t_r^{(0)}) + \frac{1}{c}\mathbf{a}_j^{(0)}(t_r^{(0)}) t_{r,ij}^{(1)}
+\dot{\boldsymbol{\beta}}_j^{(1)} = \frac{1}{c}\mathbf{a}_j^{(1)}(t_r^{(0)}) + \frac{1}{c}\dot{\mathbf{a}}_j^{(0)}(t_r^{(0)}) t_{r,ij}^{(1)}
+
+% Nennerstörung
+D_{ij}^{(1)} = - \boldsymbol{\beta}_j^{(1)} \cdot \mathbf{n}_{ij}^{(0)} - \boldsymbol{\beta}_j^{(0)} \cdot \mathbf{n}_{ij}^{(1)}
+
+% 5. Linearisierte Liénard-Wiechert-Felder (1. Ordnung)
+\mathbf{E}_{ij}^{(1)} = \mathbf{E}_{V,ij}^{(1)} + \mathbf{E}_{A,ij}^{(1)}
+
+\mathbf{E}_{V,ij}^{(1)} = \mathbf{E}_{V,ij}^{(0)} \left[ - \frac{2\gamma_j^{(1)}}{\gamma_j^{(0)}} - \frac{2 R_{ij}^{(1)}}{R_{ij}^{(0)}} - \frac{3 D_{ij}^{(1)}}{D_{ij}^{(0)}} \right] + \frac{q}{4\pi\varepsilon_0 (\gamma_j^{(0)})^2 (R_{ij}^{(0)})^2 (D_{ij}^{(0)})^3} \left(\mathbf{n}_{ij}^{(1)} - \boldsymbol{\beta}_j^{(1)}\right)
+
+\mathbf{E}_{A,ij}^{(1)} = \mathbf{E}_{A,ij}^{(0)} \left[ - \frac{R_{ij}^{(1)}}{R_{ij}^{(0)}} - \frac{3 D_{ij}^{(1)}}{D_{ij}^{(0)}} \right] + \frac{q}{4\pi\varepsilon_0 c R_{ij}^{(0)} (D_{ij}^{(0)})^3} \left[ \mathbf{n}_{ij}^{(1)} \times ((\mathbf{n}_{ij}^{(0)} - \boldsymbol{\beta}_j^{(0)}) \times \dot{\boldsymbol{\beta}}_j^{(0)}) + \mathbf{n}_{ij}^{(0)} \times ((\mathbf{n}_{ij}^{(1)} - \boldsymbol{\beta}_j^{(1)}) \times \dot{\boldsymbol{\beta}}_j^{(0)}) + \mathbf{n}_{ij}^{(0)} \times ((\mathbf{n}_{ij}^{(0)} - \boldsymbol{\beta}_j^{(0)}) \times \dot{\boldsymbol{\beta}}_j^{(1)}) \right]
+
+\mathbf{B}_{ij}^{(1)} = \frac{1}{c} \left( \mathbf{n}_{ij}^{(1)} \times \mathbf{E}_{ij}^{(0)} + \mathbf{n}_{ij}^{(0)} \times \mathbf{E}_{ij}^{(1)} \right)
