@@ -1,4 +1,3 @@
-
 # Tranverse beam size big, so that space charge effects are small
 # Longitudinal beam size small, so that 
 SIGMA_X = 2e-3 # standard deviation of initial x position in [m]
@@ -20,8 +19,10 @@ SIGMA_PX_BG = 1e-9 # standard deviation of initial x momentum in [1] (betagamma)
 SIGMA_PY_BG = 1e-9 # standard deviation of initial y momentum in [1] (betagamma)
 SIGMA_PZ_BG = 1e-9 # standard deviation of initial z momentum in [1] (betagamma)
 
-# Auch E_0 = 0. möglich
+
+# Gemini also considers E_0 = 0. 
 E_Z = -1. # electric field strength in [MV/m]
+
 
 # Total charge small, so that space charge effects are small (could be even smaller)
 TOTAL_CHARGE_SI = -1e-13    # total bunch charge in [C]
