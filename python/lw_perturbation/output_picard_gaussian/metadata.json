@@ -1,0 +1,49 @@
+{
+  "description": "Direct analytic Lienard-Wiechert Picard iteration benchmark.",
+  "config": {
+    "seed": 33,
+    "n_particles": 512,
+    "total_charge_si": -1e-12,
+    "e_z_si": -1000000.0,
+    "initial_energy_gev": 1e-09,
+    "t_end_s": 3e-09,
+    "n_outputs": 801,
+    "iterations": 3,
+    "relaxation": 1.0,
+    "integrator": "heun",
+    "retarded_iterations": 3,
+    "softening_m": 0.0,
+    "r_min_m": 1e-12,
+    "distribution": "gaussian",
+    "output_dir": "python/lw_perturbation/output_picard_gaussian",
+    "match_initial_stat": "python/lw_perturbation/opalx-sim/pert-test-uniformsphere.stat",
+    "save_all_iterations": false
+  },
+  "initial": {
+    "position_mean_m": [
+      1.8846483076408183e-20,
+      1.2705494208814505e-21,
+      -5.4791384984328485e-17
+    ],
+    "position_rms_m": [
+      0.0009870300716609878,
+      0.0009869372587020888,
+      0.0009864953389764773
+    ],
+    "momentum_mean_MeVc": [
+      -8.809473523689745e-23,
+      -9.223063829966259e-23,
+      0.001010940651077005
+    ],
+    "momentum_rms_beta_gamma": [
+      2.893483184693995e-06,
+      2.89384610756763e-06,
+      2.8936219211658634e-06
+    ]
+  },
+  "outputs": {
+    "moments_by_iteration": "picard_moments_by_iteration.csv",
+    "final_moments": "moments.csv",
+    "trajectories": "trajectories.npz"
+  }
+}

@@ -1,0 +1,20 @@
+[
+  {
+    "max_r_rms_change_m": 0.00036470222341922133,
+    "final_r_rms_change_m": 0.00036470222341922133,
+    "max_p_rms_change_mev_c": 0.0006160549401498909,
+    "final_p_rms_change_mev_c": 0.0006160549401498909
+  },
+  {
+    "max_r_rms_change_m": 6.374748089949703e-05,
+    "final_r_rms_change_m": 6.374748089949703e-05,
+    "max_p_rms_change_mev_c": 0.00016938812361944844,
+    "final_p_rms_change_mev_c": 0.00016938812361944844
+  },
+  {
+    "max_r_rms_change_m": 7.365228851782129e-06,
+    "final_r_rms_change_m": 7.365228851782129e-06,
+    "max_p_rms_change_mev_c": 1.9112964541883026e-05,
+    "final_p_rms_change_mev_c": 1.9112964541883026e-05
+  }
+]

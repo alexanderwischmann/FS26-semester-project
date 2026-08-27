@@ -4,3 +4,7 @@ __pycache__/
 __pychache__/
 *.pyc
 *.pyo
+
+# Large generated simulation data kept out of Git history
+/python/lw_perturbation/opalx-sim/pert-opalx.h5
+/python/lw_perturbation/output/trajectories.npz
