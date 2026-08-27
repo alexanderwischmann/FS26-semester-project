@@ -25,6 +25,14 @@
 # dimensionless `β·γ` only for plotting.
 
 # %%
+from pathlib import Path
+import os
+import re
+import tempfile
+
+os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "matplotlib"))
+Path(os.environ["MPLCONFIGDIR"]).mkdir(parents=True, exist_ok=True)
+
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -52,17 +60,44 @@ Q_E          = -1.0                 # electron charge                   [|e|]
 # ---------------------------------------------------------------------
 E_Z              = -1.0              # longitudinal external E-field     [MV/m]
 TOTAL_CHARGE_SI  = -1e-12            # total bunch charge                [C]
-N_PARTICLES      = 2**8              # number of macroparticles          [1]
+N_PARTICLES      = 512               # number of macroparticles          [1]
 T_END            = 3e-9              # end of integration                [s]
+INITIAL_KINETIC_ENERGY_GEV = 1e-9    # OPALX Edes reference energy       [GeV]
+INITIAL_DISTRIBUTION = os.environ.get(
+    "TPS_INITIAL_DISTRIBUTION",
+    "uniform-ellipsoid",
+).strip().lower()
+INITIAL_DISTRIBUTION_SEED = int(os.environ.get("TPS_INITIAL_DISTRIBUTION_SEED", "33"))
+MATCH_INITIAL_STAT = (
+    Path(__file__).resolve().parents[1]
+    / "lw_perturbation"
+    / "opalx-sim"
+    / "pert-test-uniformsphere.stat"
+)
 
 USE_CIC_SOFTENING = True             # whether to use softening in the CIC force calculation
-R_SOFT = 0.00005                     # softening radius for CIC (if enabled)  [m]
+R_SOFT = 0.0                         # softening radius for CIC (if enabled)  [m]
+
+if "TPS_USE_CIC_SOFTENING" in os.environ:
+    USE_CIC_SOFTENING = os.environ["TPS_USE_CIC_SOFTENING"].strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+if "TPS_R_SOFT" in os.environ:
+    R_SOFT = float(os.environ["TPS_R_SOFT"])
 
 # ---------------------------------------------------------------------
 # TPSA perturbation parameters
 # ---------------------------------------------------------------------
-PERTURB_ORDER = 2                   # maximum perturbation order K       [1]
-NUM_STEPS     = 800                 # number of fixed time steps         [1]
+PERTURB_ORDER = 3                   # maximum perturbation order K       [1]
+NUM_STEPS     = 801                 # stored points; 800 intervals match OPALX [1]
+
+if "TPS_PERTURB_ORDER" in os.environ:
+    PERTURB_ORDER = int(os.environ["TPS_PERTURB_ORDER"])
+if "TPS_NUM_STEPS" in os.environ:
+    NUM_STEPS = int(os.environ["TPS_NUM_STEPS"])
 
 # ---------------------------------------------------------------------
 # TPSA perturbation parameters
@@ -102,6 +137,12 @@ def p_to_betagamma(p):
         Same shape as ``p``, dimensionless.
     """
     return p / M_E
+
+
+def kinetic_energy_gev_to_momentum_mev_c(kinetic_energy_gev):
+    """Convert kinetic energy [GeV] to scalar momentum [MeV/c]."""
+    kinetic_energy_mev = kinetic_energy_gev * 1.0e3
+    return np.sqrt(kinetic_energy_mev * (kinetic_energy_mev + 2.0 * M_E))
 
 
 def sample_ellipsoid_qmc(mean, radii, n_particles):
@@ -144,6 +185,54 @@ def sample_ellipsoid_qmc(mean, radii, n_particles):
     points[:, 1] = mean[1] + radii[1] * y_sphere
     points[:, 2] = mean[2] + radii[2] * z_sphere
     return points
+
+
+def sample_gaussian(mean, sigma, n_particles, seed):
+    """Deterministic Gaussian sampling with exact mean/RMS applied later."""
+    rng = np.random.default_rng(seed)
+    return rng.normal(np.asarray(mean, dtype=float), np.asarray(sigma, dtype=float), (n_particles, 3))
+
+
+def read_sdds_first_row(filename):
+    """Read the first numeric row from an OPAL/OPALX SDDS .stat file."""
+    col_names = []
+    with open(filename, "r") as f:
+        for line in f:
+            stripped = line.strip()
+            if stripped.startswith("&column"):
+                col_def = stripped
+                while "&end" not in col_def:
+                    col_def += " " + next(f).strip()
+                name_match = re.search(r"name\s*=\s*(\S+)", col_def)
+                if name_match:
+                    col_names.append(name_match.group(1).strip(",\""))
+
+            if stripped.startswith("&data"):
+                for data_line in f:
+                    parts = data_line.split()
+                    if not parts:
+                        continue
+                    try:
+                        values = [float(part) for part in parts]
+                    except ValueError:
+                        continue
+                    if len(values) == len(col_names):
+                        return dict(zip(col_names, values))
+                break
+    raise RuntimeError(f"Could not find first numeric row in {filename}")
+
+
+def shift_and_scale_particles(particles, target_mean, target_rms):
+    """Affine-normalize each axis to exactly match target mean and RMS."""
+    adjusted = np.asarray(particles, dtype=float).copy()
+    target_mean = np.asarray(target_mean, dtype=float)
+    target_rms = np.asarray(target_rms, dtype=float)
+    current_mean = adjusted.mean(axis=0)
+    current_rms = adjusted.std(axis=0)
+    if np.any(current_rms == 0.0):
+        raise ValueError("Cannot scale a particle cloud with zero RMS on an axis")
+    adjusted = (adjusted - current_mean) * (target_rms / current_rms) + target_mean
+    return adjusted
 
 # %%
 # Reference-simulation data.
@@ -398,9 +487,10 @@ def _solve_tr_scalar(t_obs, r_obs0, r0_src, p0_src):
 # ---------------------------------------------------------------------
 @njit(cache=True, parallel=True, fastmath=True)
 def _eval_derivs(t_obs, Y_r, Y_p, hist_r, hist_p, n_hist, dt,
-                 r0_parts, p0_parts, dr_out, dp_out):
+                 r0_parts, p0_parts, use_cic_softening, r_soft,
+                 dr_out, dp_out):
     N  = Y_r.shape[0]
-    K1 = Y_r.shape[2]
+    K1 = Y_r.shape[1]
     K  = K1 - 1
     inv_dt  = 1.0 / dt
     inv_C   = 1.0 / C_SI
@@ -514,9 +604,9 @@ def _eval_derivs(t_obs, Y_r, Y_p, hist_r, hist_p, n_hist, dt,
                 tp_dot3(Rvec, Rvec, R2);  tp_sqrt(R2, Rmag);  tp_inv(Rmag, invR)
                 tp_scalvec(invR, Rvec, nvec)
 
-                if USE_CIC_SOFTENING:
+                if use_cic_softening:
                     for k in range(K1): Rs2[k] = R2[k]
-                    Rs2[0] += R_SOFT * R_SOFT
+                    Rs2[0] += r_soft * r_soft
                     tp_sqrt(Rs2, Rs)
                 else:
                     for k in range(K1): Rs2[k] = R2[k]; Rs[k] = Rmag[k]
@@ -683,6 +773,7 @@ def step_euler(t_idx, dt, hist_r, hist_p, times, r0_parts, p0_parts,
                dr_buf, dp_buf):
     _eval_derivs(times[t_idx - 1], hist_r[t_idx - 1], hist_p[t_idx - 1],
                  hist_r, hist_p, t_idx, dt, r0_parts, p0_parts,
+                 USE_CIC_SOFTENING, R_SOFT,
                  dr_buf, dp_buf)
     _apply_update(t_idx, dt, hist_r, hist_p, dr_buf, dp_buf,
                   times, r0_parts, p0_parts)
@@ -692,6 +783,7 @@ def step_heun(t_idx, dt, hist_r, hist_p, times, r0_parts, p0_parts,
     # Predictor (Euler) — populates hist[t_idx] with the predicted state.
     _eval_derivs(times[t_idx - 1], hist_r[t_idx - 1], hist_p[t_idx - 1],
                  hist_r, hist_p, t_idx, dt, r0_parts, p0_parts,
+                 USE_CIC_SOFTENING, R_SOFT,
                  dr1, dp1)
     _apply_update(t_idx, dt, hist_r, hist_p, dr1, dp1,
                   times, r0_parts, p0_parts)
@@ -699,6 +791,7 @@ def step_heun(t_idx, dt, hist_r, hist_p, times, r0_parts, p0_parts,
     # extends through hist[t_idx] (n_hist = t_idx + 1).
     _eval_derivs(times[t_idx], hist_r[t_idx], hist_p[t_idx],
                  hist_r, hist_p, t_idx + 1, dt, r0_parts, p0_parts,
+                 USE_CIC_SOFTENING, R_SOFT,
                  dr2, dp2)
     _apply_heun(t_idx, dt, hist_r, hist_p, dr1, dp1, dr2, dp2,
                 times, r0_parts, p0_parts)
@@ -707,15 +800,73 @@ def step_heun(t_idx, dt, hist_r, hist_p, times, r0_parts, p0_parts,
 # ---------------------------------------------------------------------
 # Initial conditions: identical sampling scheme to the reference notebook.
 # ---------------------------------------------------------------------
-r0_particles = sample_ellipsoid_qmc(
-    mean        = data_position_means_si[0],
-    radii       = np.sqrt(5.0) * data_position_sigmas_si[0],
-    n_particles = N_PARTICLES,
+opalx_initial = read_sdds_first_row(MATCH_INITIAL_STAT)
+initial_momentum_mean = np.array([
+    data_momentum_means_pp[0, 0],
+    data_momentum_means_pp[0, 1],
+    kinetic_energy_gev_to_momentum_mev_c(INITIAL_KINETIC_ENERGY_GEV),
+])
+
+if INITIAL_DISTRIBUTION == "uniform-ellipsoid":
+    r0_particles = sample_ellipsoid_qmc(
+        mean        = data_position_means_si[0],
+        radii       = np.sqrt(5.0) * data_position_sigmas_si[0],
+        n_particles = N_PARTICLES,
+    )
+    p0_particles = sample_ellipsoid_qmc(
+        mean        = initial_momentum_mean,
+        radii       = np.sqrt(5.0) * data_momentum_sigmas_pp[0],
+        n_particles = N_PARTICLES,
+    )
+elif INITIAL_DISTRIBUTION == "gaussian":
+    r0_particles = sample_gaussian(
+        mean        = data_position_means_si[0],
+        sigma       = data_position_sigmas_si[0],
+        n_particles = N_PARTICLES,
+        seed        = INITIAL_DISTRIBUTION_SEED,
+    )
+    p0_particles = sample_gaussian(
+        mean        = initial_momentum_mean,
+        sigma       = data_momentum_sigmas_pp[0],
+        n_particles = N_PARTICLES,
+        seed        = INITIAL_DISTRIBUTION_SEED + 1,
+    )
+else:
+    raise ValueError(
+        "TPS_INITIAL_DISTRIBUTION must be 'uniform-ellipsoid' or 'gaussian', "
+        f"got {INITIAL_DISTRIBUTION!r}"
+    )
+
+r0_particles = shift_and_scale_particles(
+    r0_particles,
+    target_mean=np.array([
+        opalx_initial["mean_x"],
+        opalx_initial["mean_y"],
+        opalx_initial["mean_s"],
+    ]),
+    target_rms=np.array([
+        opalx_initial["rms_x"],
+        opalx_initial["rms_y"],
+        opalx_initial["rms_s"],
+    ]),
 )
-p0_particles = sample_ellipsoid_qmc(
-    mean        = data_momentum_means_pp[0],
-    radii       = np.sqrt(5.0) * data_momentum_sigmas_pp[0],
-    n_particles = N_PARTICLES,
+
+p0_particles = shift_and_scale_particles(
+    p0_particles,
+    target_mean=initial_momentum_mean,
+    target_rms=M_E * np.array([
+        opalx_initial["rms_px"],
+        opalx_initial["rms_py"],
+        opalx_initial["rms_ps"],
+    ]),
+)
+
+print(
+    "Matched initial TPS cloud to "
+    f"{MATCH_INITIAL_STAT.name}: "
+    f"distribution={INITIAL_DISTRIBUTION}, "
+    f"rms_r={r0_particles.std(axis=0)}, "
+    f"rms_p_beta_gamma={p_to_betagamma(p0_particles.std(axis=0))}"
 )
 
 # ---------------------------------------------------------------------
@@ -839,4 +990,3 @@ plot_data(axes[1,1], times, p_to_betagamma(rms_p_orders [:, K, 2]), data_times, 
 fig.tight_layout()
 
 fig.savefig("tpsa_2.png", dpi=300)
-
