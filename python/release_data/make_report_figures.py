@@ -7,12 +7,14 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.ticker import AutoMinorLocator, MaxNLocator
 import numpy as np
+import re
 
 plt.rcParams["font.family"] = "serif"
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DATA_DIR = SCRIPT_DIR / "data"
 OUTPUT_DIR = SCRIPT_DIR / "figures"
+OPAL_STAT_PATH = DATA_DIR / "GH200_Drift-4-open-bins.stat"
 
 COLUMN_NAMES = (
     "time_s",
@@ -23,22 +25,80 @@ COLUMN_NAMES = (
 )
 
 MODEL_STYLES = {
-    "single_particle": {"label": "single-particle", "color": "0.35", "linestyle": (0, (8, 3))},
+    "single_particle": {"label": "single particle", "color": "0.35", "linestyle": (0, (8, 3))},
     "liouville": {"label": "Liouville ensemble", "color": "tab:purple", "linestyle": (0, (3, 2)), "linewidth": 2.2, "zorder": 5},
     "1d_envelope": {"label": "1D Euler envelope", "color": "tab:blue", "linestyle": "-"},
     "3d_envelope": {"label": "3D Euler envelope", "color": "tab:green", "linestyle": "-"},
     "first_order": {"label": "1st-order perturbation", "color": "tab:orange", "linestyle": "-"},
     "second_order": {"label": "2nd-order perturbation", "color": "tab:orange", "linestyle": "--"},
     "pic": {"label": "3D PIC", "color": "black", "linestyle": "-"},
+    "opal": {"label": "OPALX reference particle", "color": "tab:red", "linestyle": ":"},
 }
 
 
 def load_series(filename):
     path = DATA_DIR / filename
     data = np.genfromtxt(path, delimiter=",", names=True)
-    if tuple(data.dtype.names) != COLUMN_NAMES:
+    if data.dtype.names != COLUMN_NAMES:
         raise ValueError(f"Unexpected columns in {path}: {data.dtype.names}")
     return {name: np.atleast_1d(data[name]) for name in COLUMN_NAMES}
+
+
+def load_opal_series(path=OPAL_STAT_PATH):
+    column_names = []
+    in_data = False
+    column_definition = None
+    data_rows = []
+    column_pattern = re.compile(r"name\s*=\s*([^,\s]+)")
+
+    with path.open(encoding="utf-8") as file:
+        for line in file:
+            stripped = line.strip()
+            if stripped.startswith("&column"):
+                column_definition = stripped
+            elif column_definition is not None:
+                column_definition += " " + stripped
+                if stripped.startswith("&end"):
+                    match = column_pattern.search(column_definition)
+                    column_definition = None
+                    if not match:
+                        continue
+                    column_names.append(match.group(1))
+            elif stripped.startswith("&data"):
+                in_data = True
+            elif in_data and stripped and not stripped.startswith("&"):
+                values = stripped.split()
+                if len(values) != len(column_names):
+                    continue
+                try:
+                    data_rows.append([float(value) for value in values])
+                except ValueError:
+                    continue
+
+    if not data_rows:
+        raise ValueError(f"No numeric data found in {path}")
+
+    data = dict(zip(column_names, np.asarray(data_rows).T))
+    return {
+        "time_s": data["t"] * 1e-9,
+        "mean_x_m": data["mean_x"],
+        "mean_y_m": data["mean_y"],
+        "mean_z_m": data["s"],
+        "rms_x_m": data["rms_x"],
+        "rms_y_m": data["rms_y"],
+        "rms_z_m": data["rms_s"],
+        "mean_px_beta_gamma": data["ref_px"],
+        "mean_py_beta_gamma": data["ref_py"],
+        "mean_pz_beta_gamma": data["ref_pz"],
+        "rms_px_beta_gamma": data["rms_px"],
+        "rms_py_beta_gamma": data["rms_py"],
+        "rms_pz_beta_gamma": data["rms_ps"],
+    }
+
+
+def limit_series_to_time(series, max_time_s):
+    mask = series["time_s"] <= max_time_s
+    return {name: values[mask] for name, values in series.items()}
 
 
 def plot_series(ax, series, style, x_key, y_key, label=True):
@@ -134,11 +194,14 @@ def make_transverse_figure(series_by_model):
 
 
 def main():
+    complex_pic = load_series("complex_3d_pic.csv")
+    opal = limit_series_to_time(load_opal_series(), complex_pic["time_s"][-1])
     complex_series = [
         ("single_particle", load_series("complex_single_particle.csv")),
         ("liouville", load_series("complex_liouville.csv")),
         ("1d_envelope", load_series("complex_1d_envelope.csv")),
-        ("pic", load_series("complex_3d_pic.csv")),
+        ("pic", complex_pic),
+        ("opal", opal),
     ]
     simple_series = [
         ("1d_envelope", load_series("simple_1d_envelope.csv")),
