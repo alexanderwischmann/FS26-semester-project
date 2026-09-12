@@ -17,7 +17,7 @@ SNAPSHOT_DIR = SCRIPT_DIR / "data" / "pic_snapshots"
 OUTPUT_DIR = SCRIPT_DIR / "figures"
 M_E_MEV_C2 = 0.511
 MAX_PLOTTED_PARTICLES = 5000
-SNAPSHOT_FILES = (
+SNAPSHOT_FILE_SUFFIXES = (
     "pic_snapshot_0.00ns.npz",
     "pic_snapshot_3.75ns.npz",
     "pic_snapshot_12.50ns.npz",
@@ -25,9 +25,10 @@ SNAPSHOT_FILES = (
 SNAPSHOT_TITLES = ("0 ns", "3.75 ns", "12.50 ns")
 
 
-def load_snapshots():
+def load_snapshots(setup_name):
     snapshots = []
-    for filename in SNAPSHOT_FILES:
+    for suffix in SNAPSHOT_FILE_SUFFIXES:
+        filename = f"{setup_name}_{suffix}"
         path = SNAPSHOT_DIR / filename
         with np.load(path) as data:
             snapshots.append(
@@ -124,12 +125,13 @@ def make_figure(snapshots):
 
 
 def main():
-    snapshots = load_snapshots()
-    figure = make_figure(snapshots)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    figure.savefig(OUTPUT_DIR / "pic_snapshots_2x3.pdf", bbox_inches="tight")
-    figure.savefig(OUTPUT_DIR / "pic_snapshots_2x3.svg", bbox_inches="tight")
-    plt.close(figure)
+    for setup_name in ("simple", "complex"):
+        snapshots = load_snapshots(setup_name)
+        figure = make_figure(snapshots)
+        figure.savefig(OUTPUT_DIR / f"{setup_name}_pic_snapshots_2x3.pdf", bbox_inches="tight")
+        figure.savefig(OUTPUT_DIR / f"{setup_name}_pic_snapshots_2x3.svg", bbox_inches="tight")
+        plt.close(figure)
 
 
 if __name__ == "__main__":
