@@ -17,16 +17,23 @@ SNAPSHOT_DIR = SCRIPT_DIR / "data" / "pic_snapshots"
 OUTPUT_DIR = SCRIPT_DIR / "figures"
 M_E_MEV_C2 = 0.511
 MAX_PLOTTED_PARTICLES = 5000
-SNAPSHOT_FILE_SUFFIXES = (
+COMPLEX_SNAPSHOT_FILE_SUFFIXES = (
     "pic_snapshot_0.00ns.npz",
     "pic_snapshot_3.75ns.npz",
     "pic_snapshot_12.50ns.npz",
 )
-SNAPSHOT_TITLES = ("0 ns", "3.75 ns", "12.50 ns")
+SIMPLE_SNAPSHOT_FILE_SUFFIXES = (
+    "pic_snapshot_0.00ns.npz",
+    "pic_snapshot_3.75ns.npz",
+    "pic_snapshot_9.00ns.npz",
+)
+COMPLEX_SNAPSHOT_TITLES = ("0 ns", "3.75 ns", "12.50 ns") 
+SIMPLE_SNAPSHOT_TITLES = ("0 ns", "3.75 ns", "9.00 ns")
 
 
 def load_snapshots(setup_name):
     snapshots = []
+    SNAPSHOT_FILE_SUFFIXES = SIMPLE_SNAPSHOT_FILE_SUFFIXES if setup_name == "simple" else COMPLEX_SNAPSHOT_FILE_SUFFIXES
     for suffix in SNAPSHOT_FILE_SUFFIXES:
         filename = f"{setup_name}_{suffix}"
         path = SNAPSHOT_DIR / filename
@@ -41,7 +48,7 @@ def load_snapshots(setup_name):
     return snapshots
 
 
-def make_figure(snapshots):
+def make_figure(snapshots, SNAPSHOT_TITLES):
     plotted_snapshots = []
     for snapshot in snapshots:
         particle_count = len(snapshot["positions_m"])
@@ -164,7 +171,7 @@ def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     for setup_name in ("simple", "complex"):
         snapshots = load_snapshots(setup_name)
-        figure = make_figure(snapshots)
+        figure = make_figure(snapshots, SIMPLE_SNAPSHOT_TITLES if setup_name == "simple" else COMPLEX_SNAPSHOT_TITLES)
         figure.savefig(OUTPUT_DIR / f"{setup_name}_pic_snapshots_2x3.pdf", bbox_inches="tight")
         figure.savefig(OUTPUT_DIR / f"{setup_name}_pic_snapshots_2x3.svg", bbox_inches="tight")
         plt.close(figure)
